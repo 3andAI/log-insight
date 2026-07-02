@@ -88,11 +88,14 @@ histogram bucket thresholds. Cron interval lives in the crontab (documented, not
 
 ## 3. Governance & Security
 
-- **G1 — Localhost binding is the primary control.** No authentication in v1 *by design*,
-  justified only because the service is bound to `127.0.0.1` and used by a small team with
-  shell access to the host. **A future company-wide version MUST add authn/authz and
-  network controls before any non-localhost binding.** This is recorded here as a hard
-  precondition, not an afterthought.
+- **G1 — Localhost binding is the primary control, and it is *enforced*.** No authentication
+  in v1 *by design*, justified only because the service is bound to `127.0.0.1` and used by a
+  small team with shell access to the host. The bind address is `server.host` in `config.toml`
+  (default `127.0.0.1`) — configurable to preserve the multi-tenant seam — **but the app
+  refuses to start on a non-loopback address unless `server.allow_nonloopback = true` is
+  explicitly set**, and logs a loud warning when it is. Localhost-only is thus an enforced
+  control, not a flippable default. **A future company-wide version MUST add authn/authz and
+  network controls before any non-localhost binding.** This is a hard precondition, not an afterthought.
 - **G2 — PII in scope.** Logs contain usernames, IPs, and operational data. Data stays at
   rest in `logs.db` on the same host; nothing is transmitted off-host. The SQLite file must
   be permission-restricted to the service user (it aggregates PII into one searchable place).
