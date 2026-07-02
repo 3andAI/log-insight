@@ -177,8 +177,9 @@ def collect_journald(
 ```
 
 - `records` — normalized `LogRecord`s (shape from `normalize.py`).
-- `new_cursor` — `__CURSOR` of the **last** record read this run; persist it. If nothing new
-  was read, returns `after_cursor` unchanged (caller writes nothing).
+- `new_cursor` — cursor to persist; semantics defined in §5.4 (the last *successfully
+  JSON-parsed* entry's `__CURSOR`, kept or content-dropped). If nothing new was parsed,
+  returns `after_cursor` unchanged (caller writes nothing).
 - `skipped` — count of unparseable lines (for logging/observability).
 
 ### 5.2 Data flow
@@ -205,12 +206,19 @@ def collect_journald(
 | — (config)               | `host`       | the passed-in `host`, **not** journald `_HOSTNAME` (seam decision)   |
 | — (constant)             | `source_type`| `"journald"`                                                        |
 
-### 5.4 Idempotency & error handling
+### 5.4 Cursor advancement, idempotency & error handling
 
-- **Idempotent via cursor.** Re-running mid-window never double-inserts (exclusive cursor +
-  the DB insert path is the same records). A crash before `collect.py` persists the cursor
-  just means the next run re-reads those entries — harmless if the insert is dedup-safe;
-  see the note to `collect.py` below.
+- **Cursor advancement (BP8, option B).** `new_cursor` = the `__CURSOR` of the **last
+  successfully JSON-parsed entry** this run — *whether it was kept or content-dropped* (e.g.
+  dropped for a missing timestamp). Rationale: a parseable-but-unusable entry is progressed
+  past **once**, not re-read and re-skipped on every cron run.
+  - A **trailing unparseable line** (malformed / truncated read) has no cursor and does **not**
+    advance `new_cursor` beyond the last good parse before it → it is safely retried next run.
+  - A **malformed middle line** is skipped; a later good entry's cursor supersedes it (that
+    middle entry is not recoverable — it had no readable cursor either way).
+- **Idempotent via cursor.** Re-running mid-window never double-inserts (exclusive
+  `--after-cursor` + same insert path). A crash before `collect.py` persists the cursor just
+  re-reads those entries next run — harmless when the insert is dedup-safe; see `collect.py` note.
 - **Stale/invalid cursor** (journal vacuumed away): `journalctl` errors or emits nothing.
   → log a warning and fall back to `initial_backfill` for this run, then continue.
 - **Malformed JSON line** → skip it, increment `skipped`, keep going (never abort the batch).
