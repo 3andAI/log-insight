@@ -1,0 +1,39 @@
+Intent: Log Insight — Übersicht und Suche für unsere Server-Logs
+ 
+ 
+ 
+Wenn auf einem unserer Linux-Server etwas schiefläuft, durchsuchen wir die Logs
+heute manuell per grep über SSH. Das ist langsam, niemand hat den Überblick über
+mehrere Zeiträume, und bei einem Vorfall verlieren wir Zeit. Wir wollen ein
+kleines internes Werkzeug, das die Logs regelmäßig einsammelt und durchsuchbar
+macht.
+ 
+ 
+ 
+Wir wollen in kleines internes Toolî entwickeln, das
+- die Logs eines Linux-Servers regelmäßig in eine Datenbank überführt und
+- eine einfache Web-Oberfläche bietet, um sie zu durchsuchen, zu filtern und
+  einen groben Überblick (z. B. Ereignisse über die Zeit) zu bekommen.
+ 
+ 
+ 
+- Läuft intern, auf einem einzelnen Server. Kein Multi-Tenant, keine Cloud-Pflicht. Allerdings so ausgelegt, dass es in Weiterentwiclungen Multi-Tenant fägig ist.
+- Die Logs können Benutzernamen, IP-Adressen und weitere Betriebsdaten enthalten. Daher sollte es in der ersten Version nur über localhost aufgerufen werden können. Eine Struktur, die es unternhemensweit nutzbar macht sollte nicht archiktektonisch verhindert, aber zu diesem Zeitpunkt auch nicht entwickelt oder spezifiziert werden.
+- Wird von einem kleinen Team benutzt, nicht öffentlich.
+- Wir haben etwa einen Tag dafür — bewusst klein halten, MVP.
+ 
+ 
+Erfolgskriterien
+ 
+- Ich kann nach einem Zeitraum und einem Stichwort suchen und bekomme die
+  passenden Logzeilen.
+- Neue Logeinträge landen ohne mein Zutun regelmäßig in der Ansicht.
+- Ich sehe auf einen Blick, ob es ungewöhnlich viele Fehler gab.
+ 
+ 
+Nicht Teil dieses Intents
+ 
+- Alarmierung / Benachrichtigung.
+- Mehrere Server gleichzeitig.
+- Langzeit-Archivierung.
+ 
