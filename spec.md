@@ -242,9 +242,11 @@ malformed line, unit-fallback chain.
 
 ---
 
-## 7. Web UI — agreed design (M2 / BP5)
+## 7. Web UI — PROVISIONAL design (M2 / BP5 — pending real UX sign-off)
 
-UI/UX signed off 2026-07-02 (BP5). Server-rendered (FastAPI + Jinja2), read-only over the DB.
+Built to preliminary layout preferences; **BP5 is reopened** — this needs a browser UX review by
+business before it is signed off, and change requests get folded back into this section first.
+Server-rendered (FastAPI + Jinja2), read-only over the DB.
 
 - **Single page**, top→bottom: filter bar → error+warning histogram → results table (BP5).
 - **Filters (F1/F2):** keyword (FTS), From/To (datetime-local, server-local tz → UTC µs),
