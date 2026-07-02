@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Log Insight</title>
+  <style>
+    :root { --err:#c0392b; --warn:#e08e0b; --info:#2d7dd2; --debug:#7a7a7a; --unknown:#999; }
+    body { font-family: system-ui, sans-serif; margin: 0; color: #1c1c1c; }
+    header { display:flex; align-items:center; justify-content:space-between;
+             padding:.5rem 1rem; background:#1c2733; color:#fff; }
+    header .live { font-size:.85rem; }
+    form.filters { display:flex; flex-wrap:wrap; gap:.5rem; align-items:end;
+                   padding:.75rem 1rem; background:#f2f4f7; border-bottom:1px solid #dfe3e8; }
+    form.filters label { display:flex; flex-direction:column; font-size:.72rem; color:#556; gap:2px; }
+    form.filters input, form.filters select { padding:.3rem; border:1px solid #c4ccd6; border-radius:4px; }
+    form.filters button { padding:.4rem .9rem; background:#2d7dd2; color:#fff; border:0; border-radius:4px; cursor:pointer; }
+    .overview { padding:.75rem 1rem; border-bottom:1px solid #eee; }
+    .overview .head { display:flex; justify-content:space-between; font-size:.8rem; color:#556; margin-bottom:.25rem; }
+    .chart { display:flex; align-items:flex-end; gap:1px; height:80px; background:#fafbfc; border:1px solid #eee; }
+    .chart .bar { flex:1 1 0; background:var(--err); min-height:1px; }
+    .chart .bar.zero { background:#eef1f4; }
+    table { border-collapse:collapse; width:100%; font-size:.85rem; }
+    th, td { text-align:left; padding:.3rem .6rem; border-bottom:1px solid #eee; vertical-align:top; }
+    th { position:sticky; top:0; background:#f7f9fb; }
+    td.msg { font-family:ui-monospace, monospace; white-space:pre-wrap; word-break:break-word; }
+    td.time { white-space:nowrap; color:#445; }
+    .tag { display:inline-block; padding:.05rem .4rem; border-radius:3px; color:#fff; font-size:.72rem; text-transform:uppercase; }
+    .tag.error{background:var(--err)} .tag.warning{background:var(--warn)}
+    .tag.info{background:var(--info)} .tag.debug{background:var(--debug)} .tag.unknown{background:var(--unknown)}
+    .foot { padding:.75rem 1rem; display:flex; justify-content:space-between; align-items:center; font-size:.85rem; }
+    .foot button { padding:.4rem .9rem; cursor:pointer; }
+    .empty { padding:2rem 1rem; color:#778; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>Log Insight</strong>
+    <span class="live">
+      <span id="live-state">● live · {{ refresh_seconds }}s</span>
+      <button type="button" id="pause" style="margin-left:.5rem">pause</button>
+    </span>
+  </header>
+
+  <form class="filters" method="get" action="/">
+    <label>Keyword <input type="text" name="keyword" value="{{ keyword }}" placeholder="e.g. refused"></label>
+    <label>From <input type="datetime-local" name="from" value="{{ from_value }}"></label>
+    <label>To <input type="datetime-local" name="to" value="{{ to_value }}"></label>
+    <label>Level
+      <select name="level">
+        <option value="all" {{ 'selected' if level=='all' }}>all</option>
+        {% for lv in levels %}<option value="{{ lv }}" {{ 'selected' if level==lv }}>{{ lv }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Source <input type="text" name="source" value="{{ source }}" placeholder="unit / file"></label>
+    <button type="submit">Search</button>
+  </form>
+
+  <section class="overview">
+    <div class="head">
+      <span>Errors + Warnings per bucket</span>
+      <span>{{ total_errors }} total in range</span>
+    </div>
+    <div class="chart" title="error+warning counts over the selected range">
+      {% for b in buckets %}
+        <div class="bar {{ 'zero' if b.count==0 }}" style="height:{{ b.height }}%"
+             title="{{ b.label }} — {{ b.count }}"></div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {% if rows %}
+  <table id="results">
+    <thead><tr><th>Time (local)</th><th>Level</th><th>Source</th><th>Message</th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="time">{{ r.time }}</td>
+        <td><span class="tag {{ r.level }}">{{ r.level }}</span></td>
+        <td>{{ r.source }}</td>
+        <td class="msg">{{ r.message }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="foot">
+    <button type="button" id="load-older"
+      {% if next_cursor %}data-ts="{{ next_cursor.ts_utc }}" data-id="{{ next_cursor.id }}"{% else %}disabled{% endif %}>
+      Load older
+    </button>
+    <span id="count">showing {{ rows|length }}</span>
+  </div>
+  {% else %}
+  <div class="empty">No log entries match. If this is a fresh install, the collector may not have run yet.</div>
+  {% endif %}
+
+  <script>
+    // Auto-refresh (BP5): reload the current query every N seconds; pause persists across reloads.
+    const REFRESH = {{ refresh_seconds }} * 1000;
+    const pauseBtn = document.getElementById("pause");
+    const liveState = document.getElementById("live-state");
+    let paused = localStorage.getItem("li_paused") === "1";
+    let timer = null;
+    function apply() {
+      pauseBtn.textContent = paused ? "resume" : "pause";
+      liveState.textContent = paused ? "❚❚ paused" : "● live · {{ refresh_seconds }}s";
+      if (timer) clearTimeout(timer);
+      if (!paused) timer = setTimeout(() => location.reload(), REFRESH);
+    }
+    pauseBtn.addEventListener("click", () => {
+      paused = !paused; localStorage.setItem("li_paused", paused ? "1" : "0"); apply();
+    });
+    apply();
+
+    // Load older: keyset-append without disturbing the live view.
+    const older = document.getElementById("load-older");
+    if (older && !older.disabled) {
+      older.addEventListener("click", async () => {
+        const params = new URLSearchParams(location.search);
+        params.set("before_ts", older.dataset.ts);
+        params.set("before_id", older.dataset.id);
+        const res = await fetch("/api/search?" + params.toString());
+        const data = await res.json();
+        const tbody = document.querySelector("#results tbody");
+        for (const r of data.rows) {
+          const tr = document.createElement("tr");
+          tr.innerHTML =
+            `<td class="time">${r.time}</td>` +
+            `<td><span class="tag ${r.level}">${r.level}</span></td>` +
+            `<td></td><td class="msg"></td>`;
+          tr.children[2].textContent = r.source;      // textContent = no HTML injection
+          tr.children[3].textContent = r.message;
+          tbody.appendChild(tr);
+        }
+        const shown = tbody.children.length;
+        document.getElementById("count").textContent = "showing " + shown;
+        if (data.next) { older.dataset.ts = data.next.ts; older.dataset.id = data.next.id; }
+        else { older.disabled = true; older.textContent = "no older entries"; }
+      });
+    }
+  </script>
+</body>
+</html>

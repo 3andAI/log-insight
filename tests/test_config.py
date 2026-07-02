@@ -2,7 +2,14 @@ import textwrap
 
 import pytest
 
-from log_insight.config import ConfigError, is_loopback, load_config
+from log_insight.config import (
+    BindPolicyError,
+    ConfigError,
+    ServerConfig,
+    enforce_bind_policy,
+    is_loopback,
+    load_config,
+)
 
 
 def write(tmp_path, body):
@@ -84,3 +91,25 @@ def test_port_must_be_in_range(tmp_path, value):
 def test_watched_files_must_be_list_of_strings(tmp_path):
     with pytest.raises(ConfigError):
         load_config(write(tmp_path, "[collector]\nwatched_files = \"/var/log/syslog\"\n"))
+
+
+# --- bind policy guard (spec G1) ---
+
+def test_bind_policy_allows_loopback():
+    enforce_bind_policy(ServerConfig(host="127.0.0.1"))  # no raise
+
+
+def test_bind_policy_refuses_nonloopback_by_default():
+    with pytest.raises(BindPolicyError):
+        enforce_bind_policy(ServerConfig(host="0.0.0.0", allow_nonloopback=False))
+
+
+def test_bind_policy_allows_nonloopback_when_explicitly_enabled():
+    calls = []
+
+    class Rec:
+        def warning(self, *a, **k):
+            calls.append(a)
+
+    enforce_bind_policy(ServerConfig(host="0.0.0.0", allow_nonloopback=True), logger=Rec())
+    assert calls  # a loud warning was emitted

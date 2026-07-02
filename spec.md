@@ -242,6 +242,26 @@ malformed line, unit-fallback chain.
 
 ---
 
+## 7. Web UI — agreed design (M2 / BP5)
+
+UI/UX signed off 2026-07-02 (BP5). Server-rendered (FastAPI + Jinja2), read-only over the DB.
+
+- **Single page**, top→bottom: filter bar → error+warning histogram → results table (BP5).
+- **Filters (F1/F2):** keyword (FTS), From/To (datetime-local, server-local tz → UTC µs),
+  level (all/one), source (exact). Combined as `AND`.
+- **Histogram (F3):** error+warning counts per bucket; bucket size auto-derived from span
+  (`overview.*` config), **capped at ~1500 buckets** so an extreme range can't render tens of
+  thousands of bars. Respects keyword/source/time filters; ignores the level filter by design.
+- **Freshness (F4):** auto-refresh every **30s** with a pause toggle (persisted); reloading the
+  page re-runs the current query so new entries appear (BP5).
+- **Paging:** **keyset "Load older"** (`/api/search?before_ts&before_id`) appends older rows via
+  minimal JS without disturbing the live view (BP5). `id` breaks ts ties.
+- **Security:** localhost bind enforced by `enforce_bind_policy` at serve time (G1). Output is
+  Jinja-autoescaped; JS appends use `textContent` (no HTML injection from log messages).
+- **Deviation (approved by self-review):** the histogram is **server-rendered on `GET /`**, not a
+  separate `/api/histogram` endpoint — auto-refresh reloads the page and recomputes it, so a
+  second endpoint would be dead weight. `queries.histogram()` is still independently unit-tested.
+
 ## 6. Deferred module spec — `collectors/files.py`  (BP4)
 
 `collectors/files.py` is **not** specified yet. Text-file parsing (regex, missing year, tz

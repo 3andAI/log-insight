@@ -35,10 +35,21 @@ class CollectorConfig:
 
 
 @dataclass
+class OverviewConfig:
+    # Histogram bucket size is chosen from the selected range span:
+    #   span <= minute_bucket_max_hours  -> 1-minute buckets
+    #   span <= hour_bucket_max_days     -> 1-hour buckets
+    #   larger                           -> 1-day buckets
+    minute_bucket_max_hours: int = 2
+    hour_bucket_max_days: int = 2
+
+
+@dataclass
 class Config:
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
     collector: CollectorConfig = field(default_factory=CollectorConfig)
+    overview: OverviewConfig = field(default_factory=OverviewConfig)
 
 
 class ConfigError(Exception):
@@ -79,6 +90,7 @@ def load_config(path: str | Path) -> Config:
     srv = data.get("server", {})
     col = data.get("collector", {})
     jd = col.get("journald", {})
+    ov = data.get("overview", {})
 
     watched = col.get("watched_files", [])
     if not isinstance(watched, list) or not all(isinstance(w, str) for w in watched):
@@ -105,11 +117,19 @@ def load_config(path: str | Path) -> Config:
                 ),
             ),
         ),
+        overview=OverviewConfig(
+            minute_bucket_max_hours=_as_positive_int(
+                ov.get("minute_bucket_max_hours", 2), "overview.minute_bucket_max_hours"
+            ),
+            hour_bucket_max_days=_as_positive_int(
+                ov.get("hour_bucket_max_days", 2), "overview.hour_bucket_max_days"
+            ),
+        ),
     )
 
 
 def is_loopback(host: str) -> bool:
-    """True if `host` is loopback ("localhost", 127.0.0.0/8, or ::1). Used by the M2 bind
+    """True if `host` is loopback ("localhost", 127.0.0.0/8, or ::1). Used by the bind
     guard: a non-loopback bind is refused unless `server.allow_nonloopback` is set (spec G1)."""
     if host == "localhost":
         return True
@@ -117,3 +137,26 @@ def is_loopback(host: str) -> bool:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False
+
+
+class BindPolicyError(ConfigError):
+    """The requested bind address violates the localhost-only policy (spec G1)."""
+
+
+def enforce_bind_policy(server: ServerConfig, logger=None) -> None:
+    """Refuse to bind a non-loopback address unless explicitly allowed (spec G1). This is the
+    enforced control that makes localhost-only more than a default. A loud warning is logged
+    when the escape hatch is used, since it exposes PII beyond the host."""
+    if is_loopback(server.host):
+        return
+    if not server.allow_nonloopback:
+        raise BindPolicyError(
+            f"refusing to bind non-loopback host {server.host!r}: v1 is localhost-only and has "
+            f"no authentication (spec G1). Set server.allow_nonloopback = true to override."
+        )
+    if logger is not None:
+        logger.warning(
+            "BINDING NON-LOOPBACK HOST %s — logs contain PII and there is no authentication; "
+            "ensure network access is restricted (spec G1).",
+            server.host,
+        )

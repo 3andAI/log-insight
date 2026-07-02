@@ -21,3 +21,10 @@ watched_files = ["/var/log/syslog"]
 initial_backfill = "24h"
 # Max entries ingested per collector run; the next cron tick continues (spec §5.2).
 max_batch = 5000
+
+[overview]
+# Histogram bucket size is derived from the selected range span (spec F3):
+#   span <= minute_bucket_max_hours -> 1-minute buckets
+#   span <= hour_bucket_max_days    -> 1-hour buckets ; larger -> 1-day buckets
+minute_bucket_max_hours = 2
+hour_bucket_max_days = 2
