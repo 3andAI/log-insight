@@ -1,6 +1,7 @@
 # Spec — Log Insight (v1 / MVP)
 
-Status: **DRAFT — awaiting architect sign-off (Breakpoint phase 2).**
+Status: **APPROVED** — shaping signed off 2026-07-02 (BP2 tactical spec, BP3 §5 journald module,
+BP8 §5.4 cursor semantics; see `breakpoint-register.md`). Implementation in progress (M0, M1 done).
 Source of truth for intent: `intent.txt`. This spec refines it into something reviewable.
 
 Shaping decisions (chosen by architect, 2026-07-02):

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
+import tempfile
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 
@@ -42,6 +43,8 @@ def collect_journald(
 
     On a stale/invalid cursor the underlying read fails; we fall back once to a backfill read
     and warn (spec §5.4). If that also fails, `CollectorError` propagates to `collect.py`.
+
+    `max_batch` must be >= 1 (enforced by config validation).
     """
     if reader is None:
         reader = _journalctl_reader
@@ -155,23 +158,34 @@ def _decode_message(message) -> str:
 def _journalctl_reader(argv: list[str]) -> Iterator[str]:
     """Default reader: stream stdout lines from journalctl. Raises CollectorError if the
     process is missing or exits non-zero *on its own* (a stale cursor exits 1). Early break by
-    the consumer terminates the process without raising (that is bounded-batch, not failure)."""
-    try:
-        proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    except FileNotFoundError as exc:
-        raise CollectorError("journalctl not found") from exc
+    the consumer terminates the process without raising (that is bounded-batch, not failure).
 
+    stderr goes to a temp file, not a pipe: draining only stdout while a full stderr pipe blocks
+    journalctl would deadlock the collector. We read the temp file after the process exits.
+    """
+    stderr_file = tempfile.TemporaryFile(mode="w+")
+    proc = None
     completed = False
+    returncode: int | None = None
+    stderr_text = ""
     try:
+        try:
+            proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=stderr_file, text=True)
+        except FileNotFoundError as exc:
+            raise CollectorError("journalctl not found") from exc
         assert proc.stdout is not None
         for line in proc.stdout:
             yield line
         completed = True  # stdout exhausted naturally (not an early break)
     finally:
-        if proc.poll() is None:
-            proc.terminate()
-        proc.wait()
+        if proc is not None:
+            if proc.poll() is None:
+                proc.terminate()
+            proc.wait()
+            returncode = proc.returncode
+            stderr_file.seek(0)
+            stderr_text = stderr_file.read().strip()
+        stderr_file.close()
 
-    if completed and proc.returncode not in (0, None):
-        stderr = proc.stderr.read().strip() if proc.stderr else ""
-        raise CollectorError(f"journalctl exited {proc.returncode}: {stderr}")
+    if completed and returncode not in (0, None):
+        raise CollectorError(f"journalctl exited {returncode}: {stderr_text}")

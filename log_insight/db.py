@@ -66,19 +66,36 @@ _INSERT = (
 
 
 def connect(path: str | Path) -> sqlite3.Connection:
-    """Open the DB in WAL mode with row access by name."""
+    """Open the DB in WAL mode with row access by name, and restrict its permissions (G2)."""
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
+    _restrict_permissions(path)  # main db + -shm now exist
     return conn
 
 
-def init_db(conn: sqlite3.Connection) -> None:
-    """Create the schema if absent. Idempotent."""
+def init_db(conn: sqlite3.Connection, path: str | Path | None = None) -> None:
+    """Create the schema if absent. Idempotent. Pass `path` to re-restrict permissions once
+    the schema write has created the -wal sidecar (G2)."""
     with conn:  # one transaction; rolls back on any failure
         for stmt in _SCHEMA:
             conn.execute(stmt)
+    if path is not None:
+        _restrict_permissions(path)
+
+
+def _restrict_permissions(path: str | Path) -> None:
+    """chmod the DB and its WAL/SHM sidecars to 0600 — the database aggregates PII into one
+    searchable place (spec G2), so it must not be group/world-readable regardless of umask.
+    Best effort: silently skips what does not exist or cannot be chmod'd (e.g. :memory:)."""
+    p = Path(path)
+    for target in (p, p.with_name(p.name + "-wal"), p.with_name(p.name + "-shm")):
+        try:
+            if target.exists():
+                target.chmod(0o600)
+        except OSError:
+            pass
 
 
 def insert_records(conn: sqlite3.Connection, records: Iterable[LogRecord]) -> int:

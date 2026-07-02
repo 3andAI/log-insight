@@ -3,7 +3,11 @@ from pathlib import Path
 import pytest
 
 from log_insight.collectors import CollectorError
-from log_insight.collectors.journald import _build_argv, collect_journald
+from log_insight.collectors.journald import (
+    _build_argv,
+    _journalctl_reader,
+    collect_journald,
+)
 
 FIXTURE = Path(__file__).parent / "fixtures" / "journald_sample.jsonl"
 # Cursors from the fixture (see journald_probe_notes.md).
@@ -144,3 +148,40 @@ def test_argv_backfill_boot():
 def test_argv_backfill_all_is_unbounded():
     argv = _build_argv(None, "all")
     assert "--since" not in argv and "--boot" not in argv
+
+
+# --- default reader subprocess behavior (spec §5.4) ---
+
+def test_reader_yields_stdout_lines():
+    argv = ["sh", "-c", "printf 'a\\nb\\n'"]
+    assert [ln.strip() for ln in _journalctl_reader(argv)] == ["a", "b"]
+
+
+def test_reader_raises_on_nonzero_exit_and_includes_stderr():
+    # stdout drains fine; process exits non-zero on its own with stderr output.
+    argv = ["sh", "-c", "printf 'line1\\n'; printf 'boom-detail\\n' >&2; exit 3"]
+    with pytest.raises(CollectorError) as excinfo:
+        list(_journalctl_reader(argv))
+    assert "exited 3" in str(excinfo.value)
+    assert "boom-detail" in str(excinfo.value)
+
+
+def test_reader_raises_when_command_missing():
+    with pytest.raises(CollectorError):
+        list(_journalctl_reader(["definitely-not-a-real-binary-xyz-123"]))
+
+
+def test_reader_early_break_does_not_raise():
+    # Consumer stops early (bounded batch): terminating the process is not a failure.
+    argv = ["sh", "-c", "printf 'a\\nb\\nc\\n'; exit 3"]
+    gen = _journalctl_reader(argv)
+    assert next(gen).strip() == "a"
+    gen.close()  # GeneratorExit — must not raise CollectorError
+
+
+def test_reader_survives_large_stderr_without_deadlock():
+    # >64KB of stderr (past a typical pipe buffer) while stdout is short: a pipe would deadlock;
+    # the temp-file redirect must not. Guarded so a regression fails instead of hanging forever.
+    argv = ["sh", "-c", "printf 'ok\\n'; yes X | head -c 200000 >&2; exit 1"]
+    with pytest.raises(CollectorError):
+        list(_journalctl_reader(argv))

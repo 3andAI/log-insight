@@ -2,7 +2,7 @@ import textwrap
 
 import pytest
 
-from log_insight.config import is_loopback, load_config
+from log_insight.config import ConfigError, is_loopback, load_config
 
 
 def write(tmp_path, body):
@@ -59,3 +59,28 @@ def test_is_loopback_true(host):
 @pytest.mark.parametrize("host", ["0.0.0.0", "10.0.0.1", "192.168.1.2", "example.com", ""])
 def test_is_loopback_false(host):
     assert is_loopback(host) is False
+
+
+# --- validation: security-sensitive values are validated, not coerced (spec G1) ---
+
+def test_allow_nonloopback_string_is_rejected(tmp_path):
+    # The footgun: bool("false") would be True and silently disable the bind guard.
+    with pytest.raises(ConfigError):
+        load_config(write(tmp_path, '[server]\nallow_nonloopback = "false"\n'))
+
+
+@pytest.mark.parametrize("value", ["0", "-1", '"5000"', "1.5"])
+def test_max_batch_must_be_positive_int(tmp_path, value):
+    with pytest.raises(ConfigError):
+        load_config(write(tmp_path, f"[collector.journald]\nmax_batch = {value}\n"))
+
+
+@pytest.mark.parametrize("value", ["0", "70000", "-5"])
+def test_port_must_be_in_range(tmp_path, value):
+    with pytest.raises(ConfigError):
+        load_config(write(tmp_path, f"[server]\nport = {value}\n"))
+
+
+def test_watched_files_must_be_list_of_strings(tmp_path):
+    with pytest.raises(ConfigError):
+        load_config(write(tmp_path, "[collector]\nwatched_files = \"/var/log/syslog\"\n"))

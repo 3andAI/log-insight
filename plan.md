@@ -1,7 +1,7 @@
 # Plan — Log Insight (v1 / MVP)
 
-Derived from `spec.md`. Status: **DRAFT — awaiting Plan Calibration sign-off (Breakpoint phase 4).**
-No code is written until this plan is approved.
+Derived from `spec.md`. Status: **APPROVED** — Plan Calibration signed off 2026-07-02 (BP7).
+Progress: M0 (scaffolding) and M1 (journald ingestion) complete; M0.5 probe done. Next: M2.
 
 Order is **risk-first** (spec §4): journald path delivers every success criterion; `/var/log`
 is last and is the graceful cut line.

@@ -26,7 +26,7 @@ def run(config_path: str = "config.toml", *, journald_reader=None) -> None:
     cfg = load_config(config_path)
     conn = db.connect(cfg.database.path)
     try:
-        db.init_db(conn)
+        db.init_db(conn, cfg.database.path)
         _collect_journald(conn, cfg, reader=journald_reader)
         # M4: _collect_files(conn, cfg) — wrapped the same way.
     finally:
