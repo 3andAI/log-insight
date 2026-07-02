@@ -1,0 +1,23 @@
+# Log Insight configuration (v1 / MVP). See spec.md.
+
+[database]
+path = "logs.db"   # SQLite file; contains PII — restrict file perms (spec G2)
+
+[server]
+# Bind address for the web UI. Localhost-only is the primary security control in v1 (spec G1).
+host = "127.0.0.1"
+port = 8000
+# Safety guard: the app refuses to start on a non-loopback host unless this is explicitly true.
+allow_nonloopback = false
+
+[collector]
+# Logical host name stored on every entry (multi-tenant seam — spec §2). Not the bind address.
+host = "localhost"
+# Text log files to ingest (v1: syslog only).
+watched_files = ["/var/log/syslog"]
+
+[collector.journald]
+# On first run (no cursor yet) how far back to backfill: "24h" | "boot" | "all".
+initial_backfill = "24h"
+# Max entries ingested per collector run; the next cron tick continues (spec §5.2).
+max_batch = 5000
